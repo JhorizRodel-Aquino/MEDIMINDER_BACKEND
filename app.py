@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, request
-from flask_mysqldb import MySQL
 import os
 from werkzeug.utils import secure_filename
 import uuid as uuid
