@@ -17,7 +17,7 @@ CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5501"}})
 
 # Configure MySQL connection
 app.config['MYSQL_HOST'] = "srv1668.hstgr.io"
-app.config['MYSQL_USER'] = "u854837124_mediminder"
+app.config['MYSQL_USER'] = "u854837124_mediminder"  
 app.config['MYSQL_PASSWORD'] = "mediMinder457!"
 app.config['MYSQL_DB'] = "u854837124_mediminder_db"
 
@@ -495,37 +495,18 @@ def create_schedule(uid):
 
     cursor.execute("SELECT label, sched FROM records WHERE uid = %s", (uid,))
     sched_data = cursor.fetchall()
-    cursor.close()
-    mysql.close()
+    
     
 
     if len(sched_data) < 1:
-        mysql = pymysql.connect(
-            host=app.config['MYSQL_HOST'],
-            user=app.config['MYSQL_USER'],
-            password=app.config['MYSQL_PASSWORD'],
-            database=app.config['MYSQL_DB']
-        )
-        cursor = mysql.cursor()
         cursor.execute("INSERT INTO records (uid, label, sched) VALUES (%s, %s, %s)", (uid, label, new_sched))
         mysql.commit()
-        cursor.close()
-        mysql.close()
         return "Inserted a new schedule"
 
     
     if pocket_data !=  sched_data[-1]:
-        mysql = pymysql.connect(
-            host=app.config['MYSQL_HOST'],
-            user=app.config['MYSQL_USER'],
-            password=app.config['MYSQL_PASSWORD'],
-            database=app.config['MYSQL_DB']
-        )
-        cursor = mysql.cursor()
         cursor.execute("INSERT INTO records (uid, label, sched) VALUES (%s, %s, %s)", (uid, label, new_sched))
         mysql.commit()
-        cursor.close()
-        mysql.close()
         return "Inserted a new schedule"
     
     cursor.close()
@@ -627,6 +608,7 @@ def fetch_records(uid):
     # Fetch records for the given UID
     cursor.execute("SELECT uuid, uid, label, sched, taken, status FROM records WHERE uid = %s", (uid,))
     records = cursor.fetchall()
+    
     cursor.close()
     mysql.close()
 
