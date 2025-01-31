@@ -4,12 +4,10 @@ from werkzeug.utils import secure_filename
 import uuid as uuid
 from flask_cors import CORS
 from datetime import datetime, timedelta
-# import mysql.connector
 import pymysql
 
 app = Flask(__name__)
 
-db_name = "u854837124_mediminder_db"
 number_of_sched_ahead = 10
 
 # Enable CORS for all routes
@@ -17,17 +15,11 @@ number_of_sched_ahead = 10
 CORS(app)
 
 # Configure MySQL connection
-app.config['MYSQL_HOST'] = "srv1668.hstgr.io"
-app.config['MYSQL_USER'] = "u854837124_mediminder"  
-app.config['MYSQL_PASSWORD'] = "mediMinder457!"
-app.config['MYSQL_DB'] = "u854837124_mediminder_db"
+app.config['MYSQL_HOST'] = "localhost"
+app.config['MYSQL_USER'] = "root"  
+app.config['MYSQL_PASSWORD'] = ""
+app.config['MYSQL_DB'] = "medtrackdb"
 
-mysql = pymysql.connect(
-    host=app.config['MYSQL_HOST'],
-    user=app.config['MYSQL_USER'],
-    password=app.config['MYSQL_PASSWORD'],
-    database=app.config['MYSQL_DB'],
-)
 
 # Configure upload folder and allowed file types
 app.config['UPLOAD_FOLDER'] = 'C:/Users/aquin/Downloads/MEDIMINDER - BACKEND/uploads'
@@ -78,11 +70,11 @@ def initialize_database():
 
     try:
         # Ensure database exists
-        cursor.execute("CREATE DATABASE IF NOT EXISTS u854837124_mediminder_db")
-        print("Database 'u854837124_mediminder_db' ensured.")
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {app.config['MYSQL_DB']}")
+        print(f"Database '{app.config['MYSQL_DB']}' ensured.")
 
-        # Use the 'u854837124_mediminder_db' database
-        cursor.execute("USE u854837124_mediminder_db")
+        # Use the database
+        cursor.execute(f"USE {app.config['MYSQL_DB']}")
 
         # Ensure the 'user' table exists
         cursor.execute(
@@ -200,7 +192,7 @@ def show_tables():
     cursor = mysql.cursor()
 
     try:
-        cursor.execute("USE u854837124_mediminder_db")
+        cursor.execute(f"USE {app.config['MYSQL_DB']}")
         cursor.execute("SHOW TABLES")
         tables = [table[0] for table in cursor.fetchall()]  # Fetch all tables
         return jsonify(tables)
@@ -404,13 +396,12 @@ def rename_label(uid):
     labelQuery = cursor.fetchone()[0]
 
     cursor.execute("UPDATE pockets SET label = %s WHERE uid = %s", (label, uid,))
-
-    if labelQuery.upper() != label.upper():
-        deactivate_sched(uid)
-  
     mysql.commit() 
     cursor.close()
     mysql.close()
+
+    if labelQuery.upper() != label.upper():
+        deactivate_sched(uid)
 
     return "Label renamed successfully!"
 
@@ -420,7 +411,7 @@ def set_sched(uid):
     time = request.form['setTime']
     step_hour = abs(int(request.form['setHour']))
     step_min = abs(int(request.form['setMin']))
-
+    print(date, time, step_hour, step_min)
     start = " ".join([date, time])
 
     mysql = pymysql.connect(
@@ -432,19 +423,21 @@ def set_sched(uid):
     cursor = mysql.cursor()
     cursor.execute("SELECT start, hour, min FROM pockets WHERE uid = %s", (uid,))
     oldQuery = cursor.fetchone()
+    print(oldQuery)
     
     cursor.execute("UPDATE pockets SET start = %s, hour = %s, min = %s WHERE uid = %s", (start, step_hour, step_min, uid,))
     cursor.execute("SELECT start, hour, min FROM pockets WHERE uid = %s", (uid,))
     newQuery = cursor.fetchone()
+    print(newQuery)
 
-    if oldQuery != newQuery:
-        deactivate_sched(uid)
-    
     mysql.commit() 
     cursor.close()
     mysql.close()
 
-    return "Label renamed successfully!"
+    if oldQuery != newQuery:
+        deactivate_sched(uid)
+
+    return "Sched updated successfully!"
 
 @app.route('/toggle_sched/<int:uid>/<int:stat>', methods=['PATCH'])
 def toggle_sched(uid, stat):
