@@ -13,7 +13,8 @@ db_name = "u854837124_mediminder_db"
 number_of_sched_ahead = 10
 
 # Enable CORS for all routes
-CORS(app, resources={r"/*": {"origins": "https://jhorizrodel-aquino.github.io/MediMinder-Frontend"}})
+# CORS(app, resources={r"/*": {"origins": "http://127.0.0.1:5501"}})
+CORS(app)
 
 # Configure MySQL connection
 app.config['MYSQL_HOST'] = "srv1668.hstgr.io"
