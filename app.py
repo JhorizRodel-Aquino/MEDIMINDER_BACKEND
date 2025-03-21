@@ -32,13 +32,18 @@ number_of_sched_ahead = 10
 # app.config['MYSQL_DB'] = "mediminder457$mediminder_db"
 
 # Configure upload folder and allowed file types
-app.config['UPLOAD_FOLDER'] = './uploads'
+# app.config['UPLOAD_FOLDER'] = './uploads'
 
-# mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+# mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+# Mysql = mysql.connector.connect(host="srv1668.hstgr.io", user="u854837124_mediminder", password="mediMinder457!", database="u854837124_mediminder_db")
 
+host_ = "srv1668.hstgr.io"
+user_ = "u854837124_mediminder"
+password_ = "mediMinder457!"
+database_ = "u854837124_mediminder_db"
 
 def strip_seconds():
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")    
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)    
     cursor = Mysql.cursor()
 
     cursor.execute("SELECT uid, start FROM pockets")
@@ -62,16 +67,16 @@ def strip_seconds():
 
 def initialize_database():
     """Ensure the database and table exist."""
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     try:
         # Ensure database exists
-        cursor.execute("CREATE DATABASE IF NOT EXISTS medtrackdb")
-        print("Database 'medtrackdb' ensured.")
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {database_}")
+        print(f"Database '{database_}' ensured.")
 
         # Use the 'medtrackdb' database
-        cursor.execute("USE medtrackdb")
+        cursor.execute(f"USE {database_}")
 
         # Ensure the 'user' table exists
         cursor.execute(
@@ -79,7 +84,7 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(50),
-                img_name VARCHAR(255),
+                img_name VARCHAR(5000),
                 status VARCHAR(10)
             )
             """
@@ -134,25 +139,17 @@ with app.app_context():
 
 def save_image(image):
     if image:
-        # grab the image filename
-        img_filename = secure_filename(image.filename)
-
-        # make the image filename unique
-        img_name = str(uuid.uuid1()) + "_" + img_filename
-
-        # save the image with the set filepath + unique filename
-        image.save(os.path.join(app.config['UPLOAD_FOLDER'], img_name))
+        return image 
     else:
-        img_name = "empty.jpg"
+        return "https://i.pinimg.com/564x/29/b8/d2/29b8d250380266eb04be05fe21ef19a7.jpg"
 
-    return img_name
 
-def delete_image(image_name):
-    if image_name != "empty.jpg":
-        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+# def delete_image(image_name):
+    # if image_name != "empty.jpg":
+    #     image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
 
-        if os.path.exists(image_path):
-            os.remove(image_path)
+    #     if os.path.exists(image_path):
+    #         os.remove(image_path)
 
 
 # App Routing
@@ -162,7 +159,7 @@ def handle_connect():
 
 @app.route('/show_databases')
 def show_databases():
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     try:
@@ -178,7 +175,7 @@ def show_databases():
 
 @app.route('/show_tables')
 def show_tables():
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     try:
@@ -197,7 +194,7 @@ def index():
 
 @app.route('/fetch_users', methods=['GET'])
 def fetch_users():
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT * FROM users")
     users = cursor.fetchall()
@@ -219,14 +216,14 @@ def fetch_users():
 @app.route('/create_user', methods=['POST'])
 def create_user():
     name = request.form['username']
-    image = request.files['user_image']
+    image = request.form['user_image']
 
     if not name:
         return "Username is required.", 400
 
     img_name = save_image(image)
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT name FROM users WHERE status = 'Active'")
     n_active = cursor.fetchone()
@@ -258,16 +255,16 @@ def create_user():
 @app.route('/update_user/<int:id>', methods=['PATCH'])
 def update_user(id):
     name = request.form['updatedUserName']
-    image = request.files['updatedUserImg']
+    image = request.form['updatedUserImg']
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT name, img_name FROM users WHERE id = %s", (id,))
     user = cursor.fetchone()
 
     if image:
         img_name = save_image(image)
-        delete_image(user[1])
+        # delete_image(user[1])
     else:
         img_name = user[1]
 
@@ -278,7 +275,7 @@ def update_user(id):
 
 @app.route('/delete_user/<int:id>', methods=['DELETE'])
 def delete_user(id):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     cursor.execute("SELECT uid FROM pockets WHERE id = %s", (id,))
@@ -293,7 +290,8 @@ def delete_user(id):
     user_img = cursor.fetchone()
 
     if user_img:
-        delete_image(user_img[0])
+        pass
+        # delete_image(user_img[0])
 
     cursor.execute("DELETE FROM users WHERE id = %s", (id,))
     Mysql.commit()
@@ -302,14 +300,18 @@ def delete_user(id):
 
 @app.route('/set_active/<int:id>', methods=['PATCH'])
 def set_active(id):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT id FROM users WHERE status = 'Active' AND id != %s", (id,))
     active_ID = cursor.fetchone()
+    cursor.execute("SELECT uid FROM pockets WHERE id = %s", (active_ID[0],))
+    active_pockets_uid = cursor.fetchall()
 
     if active_ID:
         cursor.execute("UPDATE users SET status = 'Inactive' WHERE id = %s", (active_ID[0],))
         cursor.execute("UPDATE pockets SET status = 'Deactivated' WHERE id = %s", (active_ID[0],))
+        for uid in active_pockets_uid:
+            remove_null_schedule(uid[0])
         cursor.execute("UPDATE users SET status = 'Active' WHERE id = %s", (id,))
         Mysql.commit()
         cursor.close()
@@ -319,7 +321,7 @@ def set_active(id):
 
 @app.route('/fetch_pockets/<int:id>', methods=['GET'])
 def fetch_pockets(id):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT uid, legend, label, start, hour, min, status FROM pockets WHERE id = %s", (id,))
     pockets = cursor.fetchall()
@@ -349,7 +351,7 @@ def fetch_pockets(id):
 def rename_label(uid):
     label = request.form['renameLabel']
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT label FROM pockets WHERE uid = %s", (uid,))
     labelQuery = cursor.fetchone()[0]
@@ -373,7 +375,7 @@ def set_sched(uid):
 
     start = " ".join([date, time])
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT start, hour, min FROM pockets WHERE uid = %s", (uid,))
     oldQuery = cursor.fetchone()
@@ -397,7 +399,7 @@ def toggle_sched(uid, stat):
     else:
         deactivate_sched(uid)
 
-    # Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    # Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     # cursor = Mysql.cursor()
 
     # cursor.execute("SELECT status FROM pockets WHERE uid = %s", (uid,))
@@ -412,7 +414,7 @@ def toggle_sched(uid, stat):
     return "Schedule activated/deactivated successfully!"
 
 def activate_sched(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("UPDATE pockets SET status = 'Activated' WHERE uid = %s", (uid,))
     Mysql.commit()
@@ -423,7 +425,7 @@ def activate_sched(uid):
     # socketio.emit('message', {'message': 'Hello from server!'})
 
 def deactivate_sched(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("UPDATE pockets SET status = 'Deactivated' WHERE uid = %s", (uid,))
     Mysql.commit()
@@ -433,7 +435,7 @@ def deactivate_sched(uid):
     # socketio.emit('message', {'message': 'Hello from server!'})
 
 def create_schedule(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     # Fetch the latest schedule from the 'pockets' table for the given UID
@@ -460,7 +462,7 @@ def create_schedule(uid):
 
     # If no schedule exists, insert the new one
     if len(sched_data) < 1:
-        Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
         cursor = Mysql.cursor()
         cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", 
                        (uid, legend, label, new_sched))
@@ -472,7 +474,7 @@ def create_schedule(uid):
     # Ensure the new schedule is different from the last one before inserting
     last_sched = sched_data[-1]  # Get the most recent schedule
     if (legend, label, new_sched) != last_sched:
-        Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
         cursor = Mysql.cursor()
         cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", 
                        (uid, legend, label, new_sched))
@@ -485,7 +487,8 @@ def create_schedule(uid):
     return "Same as the last schedule"
     
 def step_schedule(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     # Fetch the step hour and minute for the given UID (uid)
@@ -526,7 +529,7 @@ def step_schedule(uid):
     return "Successfully added new schedules"
 
 def remove_null_schedule(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     # Select records with 'taken' IS NULL for the given user ID
@@ -546,7 +549,7 @@ def remove_null_schedule(uid):
 
 @app.route('/fetch_records/<int:uid>', methods=['GET'])
 def fetch_records(uid):
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     # Fetch records for the given UID
@@ -572,17 +575,17 @@ def fetch_records(uid):
 
     return jsonify(record_list), 200
 
-@app.route('/get_image/<path:filename>', methods=['GET'])
-def get_image(filename):
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+# @app.route('/get_image/<path:filename>', methods=['GET'])
+# def get_image(filename):
+#     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-    if not os.path.isfile(file_path):
-        return "File not found", 404
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename), 200
+#     if not os.path.isfile(file_path):
+#         return "File not found", 404
+#     return send_from_directory(app.config['UPLOAD_FOLDER'], filename), 200
 
 @app.route('/fetch_schedules', methods=['GET'])
 def fetch_schedules():
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     cursor.execute("SELECT uuid, legend, label, sched FROM records WHERE taken IS NULL ORDER BY sched ASC")
@@ -624,7 +627,7 @@ def post_schedules():
     if not records:
         return "No data to begin with!", 200
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     check = []
 
@@ -661,7 +664,7 @@ def post_schedules():
     Mysql.commit()
     cursor.close()
 
-    Mysql = mysql.connector.connect(host="localhost", user="root", password="", database="medtrackdb")
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
     cursor.execute("SELECT uid, legend FROM pockets WHERE status = 'Activated'")
     pockets = cursor.fetchall()
@@ -704,8 +707,8 @@ def handle_connect():
 
 
 if __name__ == "__main__":
-    if not os.path.exists(app.config['UPLOAD_FOLDER']):
-        os.makedirs(app.config['UPLOAD_FOLDER'])
+    # if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    #     os.makedirs(app.config['UPLOAD_FOLDER'])
     # app.run(debug=True, host="0.0.0.0", port=5000)
     socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
     
