@@ -6,7 +6,7 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 import mysql.connector
 # from flask_socketio import SocketIO, send, emit
-from pyngrok import ngrok
+# from pyngrok import ngrok
 import pytz
 
 app = Flask(__name__)
@@ -35,15 +35,15 @@ app.config['UPLOAD_FOLDER'] = './uploads'
 # mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
 # Mysql = mysql.connector.connect(host="srv1668.hstgr.io", user="u854837124_mediminder", password="mediMinder457!", database="u854837124_mediminder_db")
 
-# host_ = "srv1668.hstgr.io"
-# user_ = "u854837124_mediminder"
-# password_ = "mediMinder457!"
-# database_ = "u854837124_mediminder_db"
+host_ = "srv1668.hstgr.io"
+user_ = "u854837124_mediminder"
+password_ = "mediMinder457!"
+database_ = "u854837124_mediminder_db"
 
-host_ = "localhost"
-user_ = "jhoriz"
-password_ = "jrfa2202!sql"
-database_ = "mediminder_db"
+# host_ = "localhost"
+# user_ = "jhoriz"
+# password_ = "jrfa2202!sql"
+# database_ = "mediminder_db"
 
 def strip_seconds():
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)    
