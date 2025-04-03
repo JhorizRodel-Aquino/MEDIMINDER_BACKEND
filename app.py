@@ -41,8 +41,8 @@ app.config['UPLOAD_FOLDER'] = './uploads'
 # database_ = "u854837124_mediminder_db"
 
 host_ = "localhost"
-user_ = "root"
-password_ = ""
+user_ = "jhoriz"
+password_ = "jrfa2202!sql"
 database_ = "mediminder_db"
 
 def strip_seconds():
