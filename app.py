@@ -5,17 +5,15 @@ import uuid as uuid
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import mysql.connector
-from flask_socketio import SocketIO, send, emit
-from datetime import datetime
+# from flask_socketio import SocketIO, send, emit
 from pyngrok import ngrok
 import pytz
 
 app = Flask(__name__)
 CORS(app)
-# socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet", logger=True, engineio_logger=True, ping_timeout=60, ping_interval=25, max_http_buffer_size=1000000)  # or async_mode="gevent"
-socketio = SocketIO(app, cors_allowed_origins="*")  # Allow all origins for WebSocket
+# socketio = SocketIO(app, cors_allowed_origins="*")  # Allow all origins for WebSocket
 
-db_name = "mediminder457$mediminder_db"
+# db_name = "mediminder457$mediminder_db"
 number_of_sched_ahead = 10
 
 # Enable CORS for all routes
@@ -32,15 +30,20 @@ number_of_sched_ahead = 10
 # app.config['MYSQL_DB'] = "mediminder457$mediminder_db"
 
 # Configure upload folder and allowed file types
-# app.config['UPLOAD_FOLDER'] = './uploads'
+app.config['UPLOAD_FOLDER'] = './uploads'
 
 # mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
 # Mysql = mysql.connector.connect(host="srv1668.hstgr.io", user="u854837124_mediminder", password="mediMinder457!", database="u854837124_mediminder_db")
 
-host_ = "srv1668.hstgr.io"
-user_ = "u854837124_mediminder"
-password_ = "mediMinder457!"
-database_ = "u854837124_mediminder_db"
+# host_ = "srv1668.hstgr.io"
+# user_ = "u854837124_mediminder"
+# password_ = "mediMinder457!"
+# database_ = "u854837124_mediminder_db"
+
+host_ = "localhost"
+user_ = "root"
+password_ = ""
+database_ = "mediminder_db"
 
 def strip_seconds():
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)    
@@ -84,7 +87,7 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(50),
-                img_name VARCHAR(5000),
+                img_name VARCHAR(255),
                 status VARCHAR(10)
             )
             """
@@ -139,23 +142,31 @@ with app.app_context():
 
 def save_image(image):
     if image:
-        return image 
+        # grab the image filename
+        img_filename = secure_filename(image.filename)
+
+        # make the image filename unique
+        img_name = str(uuid.uuid1()) + "_" + img_filename
+
+        # save the image with the set filepath + unique filename
+        image.save(os.path.join(app.config['UPLOAD_FOLDER'], img_name))
     else:
-        return "https://i.pinimg.com/564x/29/b8/d2/29b8d250380266eb04be05fe21ef19a7.jpg"
+        img_name = "empty.jpg"
 
+    return img_name
 
-# def delete_image(image_name):
-    # if image_name != "empty.jpg":
-    #     image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
+def delete_image(image_name):
+    if image_name != "empty.jpg":
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_name)
 
-    #     if os.path.exists(image_path):
-    #         os.remove(image_path)
+        if os.path.exists(image_path):
+            os.remove(image_path)
 
 
 # App Routing
-@socketio.on('connect')
-def handle_connect():
-    print('Client connected')
+# @socketio.on('connect')
+# def handle_connect():
+#     print('Client connected')
 
 @app.route('/show_databases')
 def show_databases():
@@ -216,7 +227,7 @@ def fetch_users():
 @app.route('/create_user', methods=['POST'])
 def create_user():
     name = request.form['username']
-    image = request.form['user_image']
+    image = request.files['user_image']
 
     if not name:
         return "Username is required.", 400
@@ -252,10 +263,11 @@ def create_user():
 
     return "User and Pockets created successfully!"
 
+
 @app.route('/update_user/<int:id>', methods=['PATCH'])
 def update_user(id):
     name = request.form['updatedUserName']
-    image = request.form['updatedUserImg']
+    image = request.files['updatedUserImg']
 
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
@@ -264,7 +276,7 @@ def update_user(id):
 
     if image:
         img_name = save_image(image)
-        # delete_image(user[1])
+        delete_image(user[1])
     else:
         img_name = user[1]
 
@@ -291,7 +303,7 @@ def delete_user(id):
 
     if user_img:
         pass
-        # delete_image(user_img[0])
+        delete_image(user_img[0])
 
     cursor.execute("DELETE FROM users WHERE id = %s", (id,))
     Mysql.commit()
@@ -575,13 +587,13 @@ def fetch_records(uid):
 
     return jsonify(record_list), 200
 
-# @app.route('/get_image/<path:filename>', methods=['GET'])
-# def get_image(filename):
-#     file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+@app.route('/get_image/<path:filename>', methods=['GET'])
+def get_image(filename):
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
-#     if not os.path.isfile(file_path):
-#         return "File not found", 404
-#     return send_from_directory(app.config['UPLOAD_FOLDER'], filename), 200
+    if not os.path.isfile(file_path):
+        return "File not found", 404
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename), 200
 
 @app.route('/fetch_schedules', methods=['GET'])
 def fetch_schedules():
@@ -674,7 +686,7 @@ def post_schedules():
         if pocket[1] in check:
             step_schedule(pocket[0])
 
-    socketio.emit('records_updated', True)  # Send the latest data to the newly connected client
+    # socketio.emit('records_updated', True)  # Send the latest data to the newly connected client
     return "Records updated successfully!", 200
 
 @app.route('/time', methods=['GET'])
@@ -684,9 +696,9 @@ def get_time():
     
     return jsonify({"datetime": ph_time})
 
-@socketio.on('connect')
-def handle_connect():
-    print("JS connected")
+# @socketio.on('connect')
+# def handle_connect():
+#     print("JS connected")
 
 # @socketio.on('connect')
 # def handle_connect():
@@ -707,9 +719,10 @@ def handle_connect():
 
 
 if __name__ == "__main__":
-    # if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    #     os.makedirs(app.config['UPLOAD_FOLDER'])
-    # app.run(debug=True, host="0.0.0.0", port=5000)
-    socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
+    if not os.path.exists(app.config['UPLOAD_FOLDER']):
+        os.makedirs(app.config['UPLOAD_FOLDER'])
+    app.run(debug=True, host="0.0.0.0", port=5000)
+    # socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
     
     
+
