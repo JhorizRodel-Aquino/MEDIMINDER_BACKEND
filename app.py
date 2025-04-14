@@ -5,48 +5,29 @@ import uuid as uuid
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import mysql.connector
-# from flask_socketio import SocketIO, send, emit
-# from pyngrok import ngrok
 import pytz
+import json
+
 
 app = Flask(__name__)
 CORS(app)
-# socketio = SocketIO(app, cors_allowed_origins="*")  # Allow all origins for WebSocket
 
-# db_name = "mediminder457$mediminder_db"
-number_of_sched_ahead = 10
-
-# Enable CORS for all routes
-
-# Set up Ngrok
-# ngrok.set_auth_token("2u7ndFgxshQX6UHvFUFtbfCeidx_5G3fLxfQWyQ41g7PnRBmj")
-# public_url = ngrok.connect(5000).public_url
-# print(f"Ngrok Tunnel: {public_url}")
-
-# Configure MySQL connection
-# app.config['MYSQL_HOST'] = "mediminder457.mysql.pythonanywhere-services.com"
-# app.config['MYSQL_USER'] = "mediminder457"
-# app.config['MYSQL_PASSWORD'] = "mediMINDERmySQLdb!!"
-# app.config['MYSQL_DB'] = "mediminder457$mediminder_db"
-
-# Configure upload folder and allowed file types
 app.config['UPLOAD_FOLDER'] = './uploads'
-
-# mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-# Mysql = mysql.connector.connect(host="srv1668.hstgr.io", user="u854837124_mediminder", password="mediMinder457!", database="u854837124_mediminder_db")
-
-host_ = "srv1668.hstgr.io"
-user_ = "u854837124_mediminder"
-password_ = "mediMinder457!"
-database_ = "u854837124_mediminder_db"
+number_of_sched_ahead = 10
 
 # host_ = "localhost"
 # user_ = "jhoriz"
 # password_ = "jrfa2202!sql"
 # database_ = "mediminder_db"
 
+
+host_ = "localhost"
+user_ = "root"
+password_ = ""
+database_ = "mediminder_db1"
+
 def strip_seconds():
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)    
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
     cursor.execute("SELECT uid, start FROM pockets")
@@ -87,9 +68,16 @@ def initialize_database():
             CREATE TABLE IF NOT EXISTS users (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(50),
+                age INT,
+                sex VARCHAR(10),
+                height FLOAT,
+                weight FLOAT,
+                contact VARCHAR(20),
+                emergency VARCHAR(100),
+                diseases JSON,
                 img_name VARCHAR(255),
                 status VARCHAR(10)
-            )
+            );
             """
         )
         Mysql.commit()
@@ -163,10 +151,254 @@ def delete_image(image_name):
             os.remove(image_path)
 
 
-# App Routing
-# @socketio.on('connect')
-# def handle_connect():
-#     print('Client connected')
+
+def deactivate_sched(uid):
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+    cursor = Mysql.cursor()
+    cursor.execute("UPDATE pockets SET status = 'Deactivated' WHERE uid = %s", (uid,))
+    Mysql.commit()
+    cursor.close()
+
+    remove_null_schedule(uid)
+    # socketio.emit('message', {'message': 'Hello from server!'})
+
+def activate_sched(uid):
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+    cursor = Mysql.cursor()
+    cursor.execute("UPDATE pockets SET status = 'Activated' WHERE uid = %s", (uid,))
+    Mysql.commit()
+    cursor.close()
+
+    create_schedule(uid)
+    step_schedule(uid)
+    # socketio.emit('message', {'message': 'Hello from server!'})
+
+
+def create_schedule(uid):
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+    cursor = Mysql.cursor()
+
+    # Fetch the latest schedule from the 'pockets' table for the given UID
+    cursor.execute("SELECT legend, label, start FROM pockets WHERE uid = %s", (uid,))
+    pocket_data = cursor.fetchone()
+
+    if not pocket_data:
+        cursor.close()
+        print("No pocket data found")
+        return "No pocket data found"
+
+    legend, label, new_sched = pocket_data
+
+    # Ensure new_sched is a valid datetime and is not in the past
+    if new_sched and new_sched < datetime.now():
+        cursor.close()
+        print("Schedule time is in the past, not inserting")
+        return "Schedule time is in the past"
+
+    # Fetch all existing schedules from the 'records' table for the given UID
+    cursor.execute("SELECT legend, label, sched FROM records WHERE uid = %s", (uid,))
+    sched_data = cursor.fetchall()
+    cursor.close()
+
+    # If no schedule exists, insert the new one
+    if len(sched_data) < 1:
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+        cursor = Mysql.cursor()
+        cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)",
+                       (uid, legend, label, new_sched))
+        Mysql.commit()
+        cursor.close()
+        print("Inserted a new schedule")
+        return "Inserted a new schedule"
+
+    # Ensure the new schedule is different from the last one before inserting
+    last_sched = sched_data[-1]  # Get the most recent schedule
+    if (legend, label, new_sched) != last_sched:
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+        cursor = Mysql.cursor()
+        cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)",
+                       (uid, legend, label, new_sched))
+        Mysql.commit()
+        cursor.close()
+        print("Inserted a new schedule (updated)")
+        return "Inserted a new schedule"
+
+    print("Same schedule, no changes made")
+    return "Same as the last schedule"
+
+def step_schedule(uid):
+
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+    cursor = Mysql.cursor()
+
+    # Fetch the step hour and minute for the given UID (uid)
+    cursor.execute("SELECT label, legend, hour, min FROM pockets WHERE uid = %s", (uid,))
+    result = cursor.fetchone()
+
+    if not result:
+        raise ValueError(f"No step data found for UID {uid}")
+
+    label1, legend, step_hour, step_min = result
+    step_sched = timedelta(hours=step_hour, minutes=step_min)
+
+    # Fetch the latest schedule from the records
+    cursor.execute("SELECT label, sched FROM records WHERE uid = %s", (uid,))
+    latest_record = cursor.fetchall()[-1]
+
+    cursor.execute("SELECT * FROM records WHERE taken IS NULL AND uid = %s AND status IS NULL", (uid,))
+    n_null = len(cursor.fetchall())
+
+    if not latest_record:
+        raise ValueError(f"No record found for UID {uid}")
+
+    label, last_sched = latest_record
+
+    n_sched = number_of_sched_ahead
+    N_sched = n_sched - n_null
+
+    new_schedules = []
+    for i in range(N_sched):
+        last_sched += step_sched
+        sched = (uid, legend, label1, last_sched.strftime("%Y-%m-%d %H:%M:%S"))
+        new_schedules.append(sched)
+
+    cursor.executemany("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", new_schedules)
+    Mysql.commit()
+    cursor.close()
+
+    return "Successfully added new schedules"
+
+
+def remove_null_schedule(uid):
+    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+    cursor = Mysql.cursor()
+
+    # Select records with 'taken' IS NULL for the given user ID
+    cursor.execute("SELECT * FROM records WHERE taken IS NULL AND uid = %s AND status IS NULL", (uid,))
+    null_records = cursor.fetchall()
+
+    if not null_records:
+        cursor.close()
+        return f"No records with NULL 'taken' found for UID {uid}."
+
+    # Delete the records with 'taken' IS NULL for the user
+    cursor.execute("DELETE FROM records WHERE taken IS NULL AND uid = %s AND status IS NULL", (uid,))
+    Mysql.commit()
+    cursor.close()
+
+    return f"Deleted {cursor.rowcount} records with NULL 'taken' for UID {uid}."
+
+# @app.route('/count', methods=['GET'])
+# def count():
+#     try:
+#         conn = mysql.connector.connect(
+#             host=host_,
+#             user=user_,
+#             password=password_,
+#             database=database_
+#         )
+#         cursor = conn.cursor()
+
+#         # Query to count Taken, Total, and Missed based on legend
+#         cursor.execute("""
+#             SELECT legend,
+#                    SUM(CASE WHEN status = 'Taken On Time' THEN 1 ELSE 0 END) AS taken_count,
+#                    SUM(CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END) AS total_count
+#             FROM records  -- Replace 'records' with the actual table name
+#             GROUP BY legend
+#         """)
+
+#         # Fetch all results
+#         results = cursor.fetchall()
+
+#         # Initialize dictionary to hold the counts, missed, and ratios
+#         legend_counts = {
+#             "B": {"taken": 0, "total": 0, "missed": 0, "ratio": 0},
+#             "C": {"taken": 0, "total": 0, "missed": 0, "ratio": 0},
+#             "D": {"taken": 0, "total": 0, "missed": 0, "ratio": 0}
+#         }
+
+#         # Process results and update counts
+#         for legend, taken_count, total_count in results:
+#             if legend in legend_counts:
+#                 legend_counts[legend]["taken"] = taken_count
+#                 legend_counts[legend]["total"] = total_count
+                
+#                 # Calculate missed as the difference between total and taken
+#                 legend_counts[legend]["missed"] = total_count - taken_count
+
+#                 # Calculate the ratio (taken / total) if total is not zero
+#                 if total_count > 0:
+#                     legend_counts[legend]["ratio"] = round(taken_count / total_count * 100)
+#                 else:
+#                     legend_counts[legend]["ratio"] = 0  # Avoid division by zero
+
+#     except mysql.connector.Error as err:
+#         return jsonify({"error": str(err)}), 500
+
+#     finally:
+#         cursor.close()
+#         conn.close()
+
+#     # Return the counts, missed, and ratios as a JSON response
+#     return jsonify(legend_counts)
+
+
+
+@app.route('/count', methods=['GET'])
+def count():
+    try:
+        conn = mysql.connector.connect(
+            host=host_,
+            user=user_,
+            password=password_,
+            database=database_
+        )
+        cursor = conn.cursor()
+
+        # Query to count Taken, Total, and Missed based on label in the 'records' table
+        cursor.execute("""
+            SELECT label,
+                   SUM(CASE WHEN status = 'Taken On Time' THEN 1 ELSE 0 END) AS taken_count,
+                   SUM(CASE WHEN status IS NOT NULL THEN 1 ELSE 0 END) AS total_count
+            FROM records
+            GROUP BY label
+        """)
+
+        # Fetch all results
+        results = cursor.fetchall()
+
+        # Initialize dictionary to hold the counts, missed, and ratios
+        label_counts = {}
+
+        # Process results and update counts
+        for label, taken_count, total_count in results:
+            # Initialize a label entry if not already present
+            label_counts[label] = {
+                "taken": taken_count,
+                "total": total_count,
+                "missed": total_count - taken_count
+            }
+
+        # Add ratio (taken/total)
+        for label, counts in label_counts.items():
+            total_count = counts["total"]
+            taken_count = counts["taken"]
+            if total_count > 0:
+                counts["ratio"] = round(taken_count / total_count * 100)
+            else:
+                counts["ratio"] = 0  # Avoid division by zero
+
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+    # Return the counts, missed, and ratios per label as a JSON response
+    return jsonify(label_counts)
+
 
 @app.route('/show_databases')
 def show_databases():
@@ -190,7 +422,7 @@ def show_tables():
     cursor = Mysql.cursor()
 
     try:
-        cursor.execute("USE medtrackdb")
+        cursor.execute(f"USE {database_}")
         cursor.execute("SHOW TABLES")
         tables = [table[0] for table in cursor.fetchall()]  # Fetch all tables
         return jsonify(tables)
@@ -203,51 +435,189 @@ def show_tables():
 def index():
     return "Hello, Flask! Database and table setup is automatic."
 
-@app.route('/fetch_users', methods=['GET'])
-def fetch_users():
+@app.route('/get_id', methods=['GET'])
+def get_id():
+    try:
+        conn = mysql.connector.connect(
+            host=host_,
+            user=user_,
+            password=password_,
+            database=database_
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name, img_name FROM users LIMIT 1")
+
+        result = cursor.fetchone()
+
+        if result:
+            return jsonify({"id": result[0], "name": result[1], "img_name": result[2]})
+        else:
+            return jsonify({})
+
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+# @app.route('/fetch_users', methods=['GET'])
+# def fetch_users():
+#     try:
+#         conn = mysql.connector.connect(
+#             host=host_,
+#             user=user_,
+#             password=password_,
+#             database=database_
+#         )
+#         cursor = conn.cursor()
+#         cursor.execute("SELECT * FROM users")
+#         rows = cursor.fetchall()
+
+#         # Get column names dynamically
+#         columns = [desc[0] for desc in cursor.description]
+
+#         users = [dict(zip(columns, row)) for row in rows]
+
+#     except mysql.connector.Error as err:
+#         return jsonify({"error": str(err)}), 500
+
+#     finally:
+#         cursor.close()
+#         conn.close()
+
+#     return jsonify(users)
+
+
+@app.route('/delete_all')
+def delete_all():
+    # Connect to the database
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
-    cursor.execute("SELECT * FROM users")
-    users = cursor.fetchall()
 
-    user_list = []
-    if users:
-        for user in users:
-            user_list.append({
-                "id": user[0],
-                "name": user[1],
-                "img_name": user[2],
-                "status": user[3]
-            })
+    try:
+        # Begin a transaction
+        cursor.execute("START TRANSACTION;")
+        
+        # Delete all records from the 'records' table
+        cursor.execute("DELETE FROM records;")
+        
+        # Delete all records from the 'pockets' table
+        cursor.execute("DELETE FROM pockets;")
+        
+        # Delete all records from the 'users' table
+        cursor.execute("DELETE FROM users;")
+        
+        # Commit the transaction
+        Mysql.commit()
 
-    cursor.close()
-    # strip_seconds()
-    return jsonify(user_list)
+        return "All data from 'users', 'pockets', and 'records' has been deleted.", 200
 
+    except mysql.connector.Error as err:
+        # Rollback in case of error
+        Mysql.rollback()
+        return f"Error: {err}", 500
+
+    finally:
+        cursor.close()
+        Mysql.close()
+
+@app.route('/fetch_user/<int:id>', methods=['GET'])
+def fetch_user(id):
+    try:
+        conn = mysql.connector.connect(
+            host=host_,
+            user=user_,
+            password=password_,
+            database=database_
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = %s", (id,))
+        row = cursor.fetchone()
+
+        if row is None:
+            return jsonify({"error": "User not found"}), 404
+
+        columns = [desc[0] for desc in cursor.description]
+        user = dict(zip(columns, row))
+
+        # Convert bytes to strings
+        for key, value in user.items():
+            if isinstance(value, bytes):
+                user[key] = value.decode('utf-8')
+
+        # Parse diseases JSON string if necessary
+        if isinstance(user.get("diseases"), str):
+            try:
+                user["diseases"] = json.loads(user["diseases"])
+            except json.JSONDecodeError:
+                pass  # leave it as is if it's not valid JSON
+
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+    return jsonify(user)
+    
 @app.route('/create_user', methods=['POST'])
 def create_user():
-    name = request.form['username']
-    image = request.files['user_image']
+    # Retrieve form data
+    name = request.form['name']
+    age = request.form['age']
+    sex = request.form['sex']
+    height = request.form['height']
+    weight = request.form['weight']
+    contact = request.form['contact']
+    emergency = request.form['emergency']
+    diseases = request.form.getlist('diseases')  # This will be a list (array)
+    image = request.files['img_name']
 
-    if not name:
-        return "Username is required.", 400
+    print(diseases)
+    # Validate required fields
+    if not name or not age or not sex or not height or not weight or not contact or not emergency:
+        return "All fields are required.", 400
 
+    # Validate that age, height, and weight are non-negative
+    try:
+        age = int(age)
+        height = float(height)
+        weight = float(weight)
+        if age < 0 or height < 0 or weight < 0:
+            return "Age, height, and weight must be non-negative.", 400
+    except ValueError:
+        return "Age, height, and weight must be numbers.", 400
+
+    # Save the profile image
     img_name = save_image(image)
 
+    # Connect to the database
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
+
+    # Check if there are active users
     cursor.execute("SELECT name FROM users WHERE status = 'Active'")
     n_active = cursor.fetchone()
 
-    if not n_active:  # if there are no active user
+    if not n_active:  # if there are no active users, set this user as active
         status = "Active"
     else:
         status = "Inactive"
 
-    cursor.execute("INSERT INTO users (name, img_name, status) VALUES (%s, %s, %s)", (name, img_name, status,))
+    # Insert user data into the users table
+    cursor.execute("""
+        INSERT INTO users (name, age, sex, height, weight, contact, emergency, diseases, img_name, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (name, age, sex, height, weight, contact, emergency, ','.join(diseases), img_name, status))
+
     Mysql.commit()
 
-    user_id = cursor.lastrowid  # Get the ID of the last inserted user
+    # Get the ID of the last inserted user
+    user_id = cursor.lastrowid
+
+    # Insert pocket data for the new user
     pocket_data = [
         (user_id, 'A', 'A'),
         (user_id, 'B', 'B'),
@@ -262,7 +632,6 @@ def create_user():
     cursor.close()
 
     return "User and Pockets created successfully!"
-
 
 @app.route('/update_user/<int:id>', methods=['PATCH'])
 def update_user(id):
@@ -294,7 +663,7 @@ def delete_user(id):
     pockets_uid = cursor.fetchall()
     for uid in pockets_uid:
         cursor.execute("DELETE FROM records WHERE uid = %s", (uid[0],))
-    
+
     cursor.execute("DELETE FROM pockets WHERE id = %s", (id,))
 
     # Fetch the user to get the image name before deletion
@@ -333,31 +702,61 @@ def set_active(id):
 
 @app.route('/fetch_pockets/<int:id>', methods=['GET'])
 def fetch_pockets(id):
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-    cursor.execute("SELECT uid, legend, label, start, hour, min, status FROM pockets WHERE id = %s", (id,))
-    pockets = cursor.fetchall()
+    try:
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+        cursor = Mysql.cursor()
+        
+        # Fetch only the 'id' of the pockets for the given id
+        cursor.execute("SELECT uid FROM pockets WHERE id = %s", (id,))
+        pockets = cursor.fetchall()
 
-    if not pockets:
-        return jsonify({"error": "No pockets found"}), 404  # Respond with a 404 error
+        if not pockets:
+            return jsonify({"error": "No pockets found"}), 404  # Respond with a 404 error
 
-    # Convert to a list of dictionaries
-    columns = ["uid", "legend", "label", "start", "hour", "min", "status"]
-    pocket_list = []
+        # Extract only the ids from the result
+        pocket_ids = [row[0] for row in pockets]
 
-    for row in pockets:
-        pocket_data = dict(zip(columns, row))
+        return jsonify(pocket_ids)
+
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+
+    finally:
+        cursor.close()
+        Mysql.close()
+
+@app.route('/fetch_pocket/<int:uid>', methods=['GET'])
+def fetch_pocket(uid):
+    try:
+        # Establish connection
+        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
+        cursor = Mysql.cursor()
+        
+        # Fetch the pocket details by its uid
+        cursor.execute("SELECT uid, legend, label, start, hour, min, status FROM pockets WHERE uid = %s", (uid,))
+        pocket = cursor.fetchone()
+
+        if not pocket:
+            return jsonify({"error": "Pocket not found"}), 404  # Respond with a 404 error if no pocket found
+
+        # Convert to a dictionary
+        columns = ["uid", "legend", "label", "start", "hour", "min", "status"]
+        pocket_data = dict(zip(columns, pocket))
 
         # Handle NULL start time safely
-        try:
+        if pocket_data["start"]:
             pocket_data["start"] = pocket_data["start"].strftime('%Y-%m-%d %H:%M')
-            strip_seconds
-        except AttributeError:  # If start is None, set it to an empty string
-            pocket_data["start"] = ""
+        else:
+            pocket_data["start"] = ""  # If start is None, set it to an empty string
 
-        pocket_list.append(pocket_data)
+        return jsonify(pocket_data)
 
-    return jsonify(pocket_list)
+    except mysql.connector.Error as err:
+        return jsonify({"error": str(err)}), 500
+
+    finally:
+        cursor.close()
+        Mysql.close()
 
 @app.route('/rename_label/<int:uid>', methods=['PATCH'])
 def rename_label(uid):
@@ -372,7 +771,7 @@ def rename_label(uid):
 
     Mysql.commit()
     cursor.close()
-    
+
     if labelQuery.upper() != label.upper():
         deactivate_sched(uid)
 
@@ -398,7 +797,7 @@ def set_sched(uid):
 
     Mysql.commit()
     cursor.close()
-    
+
     if oldQuery != newQuery:
         deactivate_sched(uid)
 
@@ -424,140 +823,6 @@ def toggle_sched(uid, stat):
     #     remove_null_schedule(uid)
 
     return "Schedule activated/deactivated successfully!"
-
-def activate_sched(uid):
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-    cursor.execute("UPDATE pockets SET status = 'Activated' WHERE uid = %s", (uid,))
-    Mysql.commit()
-    cursor.close()
-
-    create_schedule(uid)
-    step_schedule(uid)
-    # socketio.emit('message', {'message': 'Hello from server!'})
-
-def deactivate_sched(uid):
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-    cursor.execute("UPDATE pockets SET status = 'Deactivated' WHERE uid = %s", (uid,))
-    Mysql.commit()
-    cursor.close()
-
-    remove_null_schedule(uid)
-    # socketio.emit('message', {'message': 'Hello from server!'})
-
-def create_schedule(uid):
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-
-    # Fetch the latest schedule from the 'pockets' table for the given UID
-    cursor.execute("SELECT legend, label, start FROM pockets WHERE uid = %s", (uid,))
-    pocket_data = cursor.fetchone()
-    
-    if not pocket_data:
-        cursor.close()
-        print("No pocket data found")
-        return "No pocket data found"
-
-    legend, label, new_sched = pocket_data
-
-    # Ensure new_sched is a valid datetime and is not in the past
-    if new_sched and new_sched < datetime.now():
-        cursor.close()
-        print("Schedule time is in the past, not inserting")
-        return "Schedule time is in the past"
-
-    # Fetch all existing schedules from the 'records' table for the given UID
-    cursor.execute("SELECT legend, label, sched FROM records WHERE uid = %s", (uid,))
-    sched_data = cursor.fetchall()
-    cursor.close()
-
-    # If no schedule exists, insert the new one
-    if len(sched_data) < 1:
-        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-        cursor = Mysql.cursor()
-        cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", 
-                       (uid, legend, label, new_sched))
-        Mysql.commit()
-        cursor.close()
-        print("Inserted a new schedule")
-        return "Inserted a new schedule"
-
-    # Ensure the new schedule is different from the last one before inserting
-    last_sched = sched_data[-1]  # Get the most recent schedule
-    if (legend, label, new_sched) != last_sched:
-        Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-        cursor = Mysql.cursor()
-        cursor.execute("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", 
-                       (uid, legend, label, new_sched))
-        Mysql.commit()
-        cursor.close()
-        print("Inserted a new schedule (updated)")
-        return "Inserted a new schedule"
-
-    print("Same schedule, no changes made")
-    return "Same as the last schedule"
-    
-def step_schedule(uid):
-    
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-
-    # Fetch the step hour and minute for the given UID (uid)
-    cursor.execute("SELECT label, legend, hour, min FROM pockets WHERE uid = %s", (uid,))
-    result = cursor.fetchone()
-
-    if not result:
-        raise ValueError(f"No step data found for UID {uid}")
-
-    label1, legend, step_hour, step_min = result
-    step_sched = timedelta(hours=step_hour, minutes=step_min)
-
-    # Fetch the latest schedule from the records
-    cursor.execute("SELECT label, sched FROM records WHERE uid = %s", (uid,))
-    latest_record = cursor.fetchall()[-1]
-
-    cursor.execute("SELECT * FROM records WHERE taken IS NULL AND uid = %s", (uid,))
-    n_null = len(cursor.fetchall())
-
-    if not latest_record:
-        raise ValueError(f"No record found for UID {uid}")
-
-    label, last_sched = latest_record
-
-    n_sched = number_of_sched_ahead
-    N_sched = n_sched - n_null
-
-    new_schedules = []
-    for i in range(N_sched):
-        last_sched += step_sched
-        sched = (uid, legend, label1, last_sched.strftime("%Y-%m-%d %H:%M:%S"))
-        new_schedules.append(sched)
-
-    cursor.executemany("INSERT INTO records (uid, legend, label, sched) VALUES (%s, %s, %s, %s)", new_schedules)
-    Mysql.commit()
-    cursor.close()
-
-    return "Successfully added new schedules"
-
-def remove_null_schedule(uid):
-    Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
-    cursor = Mysql.cursor()
-
-    # Select records with 'taken' IS NULL for the given user ID
-    cursor.execute("SELECT * FROM records WHERE taken IS NULL AND uid = %s", (uid,))
-    null_records = cursor.fetchall()
-
-    if not null_records:
-        cursor.close()
-        return f"No records with NULL 'taken' found for UID {uid}."
-
-    # Delete the records with 'taken' IS NULL for the user
-    cursor.execute("DELETE FROM records WHERE taken IS NULL AND uid = %s", (uid,))
-    Mysql.commit()
-    cursor.close()
-
-    return f"Deleted {cursor.rowcount} records with NULL 'taken' for UID {uid}."
 
 @app.route('/fetch_records/<int:uid>', methods=['GET'])
 def fetch_records(uid):
@@ -600,35 +865,28 @@ def fetch_schedules():
     Mysql = mysql.connector.connect(host=host_, user=user_, password=password_, database=database_)
     cursor = Mysql.cursor()
 
-    cursor.execute("SELECT uuid, legend, label, sched FROM records WHERE taken IS NULL ORDER BY sched ASC")
+    cursor.execute("SELECT uuid, legend, label, sched FROM records WHERE taken IS NULL AND status IS NULL ORDER BY sched ASC")
     schedules = cursor.fetchall()
-    
-    
+
+
     schedules_list = []
     for uuid, legend, label, sched in schedules:
         cursor.execute("SELECT hour, min FROM pockets WHERE legend = %s", (legend,))
         interval = cursor.fetchone()
         hour, minute = interval[0], interval[1]
-        
+
         # Convert interval to total minutes
         total_minutes = (hour * 60) + minute
 
-        # Determine the grace period
-        if total_minutes >= 1440:  # Once a day (24 hrs and above)
-            grace_period = 3 * 60  # 3 hours in minutes
-        elif total_minutes >= 720:  # Twice a day (12 hrs and above)
-            grace_period = 2 * 60  # 2 hours in minutes
-        elif total_minutes >= 480:  # Thrice a day (8 hrs and above)
-            grace_period = 90  # 1 hour 30 minutes in minutes
-        elif total_minutes >= 360:  # Every 6 hrs and above
-            grace_period = 60  # 1 hour in minutes
+        if total_minutes >= 360:  # Every 6 hrs and above
+            grace_period = 2 * 60
         elif total_minutes >= 240:  # Every 4 hrs and above
-            grace_period = 45  # 45 minutes
-        else: # Below 4 hrs
-            grace_period = 3  # 30 minutes
-        
+            grace_period = 60
+        else:
+            grace_period = 2  # 2 minutes for testing
+
         schedules_list.append({"uuid": uuid, "legend": legend, "label":label, "sched": sched.strftime("%Y-%m-%d %H:%M:%S"), "grace": grace_period, "taken": ""})
-    
+
     cursor.close()
     return jsonify(schedules_list), 200
 
@@ -646,32 +904,40 @@ def post_schedules():
     for record in records:
         if record["legend"] not in check:
             check.append(record["legend"])
-        
+
         sched_time = datetime.strptime(record["sched"], "%Y-%m-%d %H:%M:%S")
-        
+
         if record["taken"] != "Not Taken":
             taken_time = datetime.strptime(record["taken"], "%Y-%m-%d %H:%M:%S")
-            
+
             # Calculate the time difference in minutes
             time_diff = (taken_time - sched_time).total_seconds() / 60
 
             # Determine the status
-            if -15 <= time_diff <= 15:
+            if -30 <= time_diff <= 30:
                 status = "On Time"
             elif time_diff < -30:
                 status = f"Taken {abs(int(time_diff))} mins earlier"
             else:
                 status = f"Taken {int(time_diff)} mins late"
-        
+
         else:
-            taken_time = datetime.strptime("1970-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+            record["taken"] = None
             status = "Not Taken"
 
-        
+        cursor.execute("SELECT * FROM records WHERE uuid = %s", (record["uuid"],))
+        existing = cursor.fetchone()
 
-        query = "UPDATE records SET label = %s, legend = %s, sched = %s, taken = %s, status = %s WHERE uuid = %s"
-        values = (record["label"], record["legend"], record["sched"], record["taken"], status, record["uuid"])
-        cursor.execute(query, values)
+        if existing:
+            # Update existing record
+            query = """UPDATE records SET label = %s, legend = %s, sched = %s, taken = %s, status = %s WHERE uuid = %s"""
+            values = (record["label"], record["legend"], record["sched"], record["taken"], status, record["uuid"])
+            cursor.execute(query, values)
+        else:
+            # Insert new record
+            query = """INSERT INTO records (uuid, label, legend, sched, taken, status)VALUES (%s, %s, %s, %s, %s, %s)"""
+            values = (record["uuid"], record["label"], record["legend"], record["sched"], record["taken"], status)
+            cursor.execute(query, values)
 
     Mysql.commit()
     cursor.close()
@@ -686,43 +952,17 @@ def post_schedules():
         if pocket[1] in check:
             step_schedule(pocket[0])
 
-    # socketio.emit('records_updated', True)  # Send the latest data to the newly connected client
     return "Records updated successfully!", 200
 
 @app.route('/time', methods=['GET'])
 def get_time():
     ph_tz = pytz.timezone('Asia/Manila')  # Set timezone to PH
     ph_time = datetime.now(ph_tz).strftime('%y/%m/%d,%H:%M:%S+08')
-    
+
     return jsonify({"datetime": ph_time})
-
-# @socketio.on('connect')
-# def handle_connect():
-#     print("JS connected")
-
-# @socketio.on('connect')
-# def handle_connect():
-#     print("ESP32 connected")
-#     # Emit a test message right after the ESP32 connects
-#     socketio.emit('message', {'text': 'Hello from server!'}, broadcast=True)
-
-# @socketio.on('disconnect')
-# def on_disconnect():
-#     print("Client disconnected")
-
-# @app.route("/send")
-# def send_message():
-#     data = {"message": "Hello ESP32!"}
-#     print(f"Sending message: {data}")  # Debug print to check if the message is being created
-#     socketio.emit("message", data)
-#     return "Message sent to ESP32!"
-
 
 if __name__ == "__main__":
     if not os.path.exists(app.config['UPLOAD_FOLDER']):
         os.makedirs(app.config['UPLOAD_FOLDER'])
-    app.run(debug=True, host="0.0.0.0", port=5000)
-    # socketio.run(app, debug=True, host="0.0.0.0", port=5000, allow_unsafe_werkzeug=True)
-    
-    
-
+    app.run(debug=True, host="0.0.0.0", port=5002)
+    # socketio.run(app, debug=True, host="0.0.0.0", port=5001, allow_unsafe_werkzeug=True)
